@@ -4,6 +4,7 @@ import Loader
 from torch.utils.data import DataLoader
 import Trainer
 import numpy as np
+import v_j
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score, precision_recall_curve, average_precision_score
 from sklearn.model_selection import KFold
@@ -12,8 +13,11 @@ import pandas as pd
 import os
 import json
 from matplotlib.font_manager import FontProperties
+import argparse
+
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+base_folder = os.getcwd()
 font = FontProperties()
 font.set_family('serif')
 font_size = 16
@@ -148,10 +152,11 @@ def evaluate_model(model, encoders, data_loader):
     print(f'Accuracy: {acc}')
 
     # Identify top positive and bottom negative cases
-    top_positive_indices = np.argsort([prob for prob, label in zip(all_predicted_probs, all_labels) if label == 1])[
-                           -len(all_labels) // 20:]
-    bottom_negative_indices = np.argsort([prob for prob, label in zip(all_predicted_probs, all_labels) if label == 0])[
-                              :len(all_labels) // 20]
+    positive_probs = [prob for prob, label in zip(all_predicted_probs, all_labels) if label == 1]
+    negative_probs = [prob for prob, label in zip(all_predicted_probs, all_labels) if label == 0]
+
+    top_positive_indices = np.argsort(positive_probs)[-len(positive_probs) // 5:]
+    bottom_negative_indices = np.argsort(negative_probs)[:len(negative_probs) // 5]
 
     # Gather the corresponding alpha and beta values based on sorted indices
     top_alpha_positives = [all_alpha[i] for i in top_positive_indices]
@@ -325,7 +330,7 @@ def objective(trial, file_path):
     return np.mean(fold_aucs)
 
 
-def save_best_params(study, trial, file_path='best_hyperparameters_vdjdb_19.1.json'):
+def save_best_params(study, trial, file_path='best_hyperparameters_vdjdb.json'):
     """Save the best hyperparameters to a file if the current trial's score is better."""
     current_best_value = study.best_value
     print("in_saving")
@@ -426,7 +431,6 @@ def find_best_model(model_of, file_path, best_params_file):
     best_model_state_dict = None
     best_alpha_encoder = None
     best_beta_encoder = None
-    print(base_folder)
     best_model_path = os.path.join(base_folder, 'best_model.pth')
     best_alpha_encoder_path = os.path.join(base_folder,
                                            'best_alpha_encoder.pth')
@@ -671,11 +675,111 @@ def run_on_test_set():
     plot_combined(all_labels_test_irec, all_predicted_probs_test_irec, all_labels_test_vdjdb,
                   all_predicted_probs_test_vdjdb)
 
+def predict(input_pair, model_of="ireceptor"):
+    if model_of == "vdjdb":
+        model_save_paths = {'model': "models/model_vdjdb.pth", 'alpha_encoder': "models/alpha_encoder_vdjdb.pth",
+                            'beta_encoder': "models/beta_encoder_vdjdb.pth"}
+        best_param = "best_hyperparameters_vdjdb.json"
+
+    else:
+        model_save_paths = {'model': "models/model_irec.pth", 'alpha_encoder': "models/alpha_encoder_irec.pth",
+                        'beta_encoder': "models/beta_encoder_irec.pth"}
+        best_param = "best_hyperparameters_ireceptor.json"
+    va_counts, vb_counts, ja_counts, jb_counts = read_dictionaries_from_file('filtered_counters.json')
+    vj_data = (va_counts, vb_counts, ja_counts, jb_counts)
+    len_one_hot = len(va_counts) + len(vb_counts) + len(ja_counts) + len(jb_counts)
+    # Load the best models
+    va = v_j.v_j_format(input_pair[0][1], 1, "TRAV")
+    vb = v_j.v_j_format(input_pair[1][1], 1, "TRBV")
+    ja = v_j.v_j_format(input_pair[0][2], 1, "TRAJ")
+    jb = v_j.v_j_format(input_pair[1][2], 2, "TRBJ")
+    if len(input_pair) == 3:
+        input_pair_ordered = [(input_pair[0][0], input_pair[1][0]), (va, vb, ja, jb), -1, input_pair[2]]
+    else:
+        input_pair_ordered = [(input_pair[0][0], input_pair[1][0]), (va, vb, ja, jb)]
+    input_pair_ordered = [tuple(input_pair_ordered)]
+    dataset = Loader.ChainClassificationDataset(input_pair_ordered, vj_data)
+    loader = DataLoader(dataset, batch_size=1, collate_fn=Loader.collate_fn)
+    vocab_size = len(dataset.vocab)
+    model, alpha_encoder, beta_encoder = load_models(model_save_paths, len_one_hot, vocab_size, best_param, model_of)
+    alpha_encoder.eval()
+    beta_encoder.eval()
+    model.eval()
+    # Use torch.no_grad() to disable gradient computation
+    with torch.no_grad():
+        for alpha, beta, va_one_hot, vb_one_hot, ja_one_hot, jb_one_hot, _, base_score in loader:
+            alpha = alpha.to(DEVICE)
+            beta = beta.to(DEVICE)
+            va_one_hot = va_one_hot.to(DEVICE)
+            vb_one_hot = vb_one_hot.to(DEVICE)
+            ja_one_hot = ja_one_hot.to(DEVICE)
+            jb_one_hot = jb_one_hot.to(DEVICE)
+            _, alpha_vector, _ = alpha_encoder(alpha)
+            _, beta_vector, _ = beta_encoder(beta)
+            if alpha_vector.shape[0] >= 2:
+                alpha_vector = alpha_vector[1].unsqueeze(0)
+            if beta_vector.shape[0] >= 2:
+                beta_vector = beta_vector[1].unsqueeze(0)
+            concatenated_a_b = torch.cat((alpha_vector, beta_vector), dim=2)
+            if base_score is not None and any(o is not None for o in base_score):
+                base_score = base_score.to(DEVICE)
+                base_score = base_score.view(1, 1, 1)
+                concatenated_inputs = torch.cat((concatenated_a_b, va_one_hot.unsqueeze(0),
+                                                 vb_one_hot.unsqueeze(0), ja_one_hot.unsqueeze(0),
+                                                 jb_one_hot.unsqueeze(0), base_score), dim=2)
+            else:
+                concatenated_inputs = torch.cat((concatenated_a_b, va_one_hot.unsqueeze(0),
+                                                 vb_one_hot.unsqueeze(0), ja_one_hot.unsqueeze(0),
+                                                 jb_one_hot.unsqueeze(0)), dim=2)
+            output = model(concatenated_inputs)
+            predicted_probability = torch.sigmoid(output)
+    return predicted_probability
+
+
+def validate_tr_prefix(value, prefix):
+    if not value.startswith(prefix):
+        raise argparse.ArgumentTypeError(f"{value} must start with {prefix}")
+    return value
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Process 7 input values")
+
+    # Add arguments for the 7 parameters
+    parser.add_argument('--tcra', type=str, required=True, help="Tcr alpha sequence")
+    parser.add_argument('--va', type=lambda v: validate_tr_prefix(v, "TRAV"), required=True, help="V alpha")
+    parser.add_argument('--ja', type=lambda v: validate_tr_prefix(v, "TRAJ"), required=True, help="J alpha")
+    parser.add_argument('--tcrb', type=str, required=True, help="Tcr beta sequence")
+    parser.add_argument('--vb', type=lambda v: validate_tr_prefix(v, "TRBV"), required=True, help="V beta")
+    parser.add_argument('--jb', type=lambda v: validate_tr_prefix(v, "TRBJ"), required=True, help="J beta")
+    parser.add_argument('--data_type', type=str, required=True, choices=['All T cells', 'pMHC-I'],
+                        help="All T cells or pMHC-I")
+
+    return parser.parse_args()
+
 
 if __name__ == "__main__":
 
-    base_folder = "/home/eng/devorasimi/Alpha_Beta_pairing/correct_models"
-    os.makedirs(base_folder, exist_ok=True)
+    args = parse_arguments()
+    input_pair = [[args.tcra, args.va, args.ja], [args.tcrb, args.vb, args.jb]]
+    if args.data_type == "All T cells":
+        model_of = "ireceptor"
+    else:
+        model_of = "vdjdb"
+        base_output = predict(input_pair, "ireceptor").item()
+        input_pair.append(base_output)
+    output = predict(input_pair, model_of).item()
+    if args.data_type == "All T cells":
+        print(f'The probability for given Alpha and Beta chains to pair is {output}.')
+        if output >= 0.938:
+            print("The prediction is in the top positive group")
+        elif output <= 0.001:
+            print("The prediction is in the bottom negative group")
+    else:
+        print(f'The probability for given Alpha and Beta chains to pair is {output}.')
+
+
+
 
 
 
