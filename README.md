@@ -54,7 +54,6 @@ python main.py --tcra="CAVRPQNYGQNFVF" --va="TRAV3" --ja="TRAJ26" --tcrb="CSVVVT
 ## Structure
 
 ```
-
 You can find the scripts and models in:
 ├───tcrbarn
 │   ├───models
