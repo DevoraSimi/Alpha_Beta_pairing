@@ -1,6 +1,6 @@
 
 <p align="center">
-      <img src="" alt="tcrbarn">
+  <img src="https://github.com/user-attachments/assets/b1d0e1bf-6b3d-4119-8902-f262ca67909d" alt="TCR-BARN Model" />
 </p>
 <p align="center">
     <a href="https://img.shields.io/badge/python-100%25-blue">
