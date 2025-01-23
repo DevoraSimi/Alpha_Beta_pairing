@@ -6,6 +6,12 @@ import v_j
 
 
 class ChainClassificationDataset(Dataset):
+    """
+    Dataset class for chain pairing classification.
+    Args:
+        data (list): List of data samples.
+        vj_data (tuple): Tuple containing dictionaries for V and J gene encodings.
+    """
     def __init__(self, data, vj_data):
         self.data = data
         amino_acids = ['A', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'V', 'W',
@@ -18,7 +24,7 @@ class ChainClassificationDataset(Dataset):
         self.vocab = [PAD_TOKEN, SOS_TOKEN, EOS_TOKEN, UNK_TOKEN] + sorted(amino_acids)
         self.acid_2_ix = {word: i for i, word in enumerate(self.vocab)}
         self.ix_2_acid = {i: word for word, i in self.acid_2_ix.items()}
-        # Initialize one-hot encodings for vj keys
+        # Initialize one-hot encodings for V and J genes
         va_dict, vb_dict, ja_dict, jb_dict = vj_data
         self.va_2_ix = va_dict
         self.vb_2_ix = vb_dict
@@ -34,6 +40,13 @@ class ChainClassificationDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, ix):
+        """
+        Get a sample from the dataset.
+        Args:
+            ix (int): Index of the sample.
+        Returns:
+            tuple: Tensors for alpha chain, beta chain, V and J gene one-hot encodings, label, and output.
+        """
         if len(self.data[ix]) == 2:
             chain_pair, vj = self.data[ix]
             output = None
@@ -51,11 +64,12 @@ class ChainClassificationDataset(Dataset):
         chain1, chain2 = chain_pair
         if label is not None:
             label = float(label)
+        # Convert amino acid sequences to tensors
         alpha_tensor = torch.tensor([self.acid_2_ix[acid] for acid in chain1] + [self.acid_2_ix["<EOS>"]],
                                     dtype=torch.long)
         beta_tensor = torch.tensor([self.acid_2_ix[acid] for acid in chain2] + [self.acid_2_ix["<EOS>"]],
                                    dtype=torch.long)
-        # One-hot encode vj features
+        # One-hot encode V and J genes
         va, vb, ja, jb = vj
         va_one_hot = torch.zeros(self.num_va)
         va_one_hot[self.va_2_ix.get(va, self.va_2_ix["<UNK>"])] = 1
@@ -70,6 +84,13 @@ class ChainClassificationDataset(Dataset):
 
 
 def collate_fn(batch):
+    """
+    Collate function to combine samples into a batch.
+    Args:
+        batch (list): List of samples.
+    Returns:
+        tuple: Batched tensors for input sequences, V and J gene encodings, labels, and outputs.
+    """
     chain1_batch, chain2_batch, va_one_hot, vb_one_hot, ja_one_hot, jb_one_hot, label_batch, output = zip(*batch)
     # Pad input chains
     input_tensor1_padded = pad_sequence(chain1_batch, batch_first=True, padding_value=0)
@@ -89,6 +110,20 @@ def collate_fn(batch):
 
 def read_data(file_path, chain1_column='tcra', chain2_column='tcrb', va_c='va', vb_c="vb", ja_c="ja", jb_c="jb",
               label_column='sign'):
+    """
+    Read data from a CSV file and format it for the dataset.
+    Args:
+        file_path (str): Path to the CSV file.
+        chain1_column (str, optional): Column name for the first chain. Default is 'tcra'.
+        chain2_column (str, optional): Column name for the second chain. Default is 'tcrb'.
+        va_c (str, optional): Column name for the V gene of the first chain. Default is 'va'.
+        vb_c (str, optional): Column name for the V gene of the second chain. Default is 'vb'.
+        ja_c (str, optional): Column name for the J gene of the first chain. Default is 'ja'.
+        jb_c (str, optional): Column name for the J gene of the second chain. Default is 'jb'.
+        label_column (str, optional): Column name for the label. Default is 'sign'.
+    Returns:
+        list: List of formatted data samples.
+    """
     df = pd.read_csv(file_path)
     if df.shape[1] == 7:
         output_col = False  # Default if `output` column is not present

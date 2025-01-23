@@ -25,12 +25,28 @@ font.set_size(font_size)
 
 
 def read_dictionaries_from_file(file_path):
+    """
+    Read dictionaries from a JSON file.
+    Args:
+        file_path (str): Path to the JSON file.
+    Returns:
+        tuple: Four dictionaries containing counts for va, vb, ja, and jb.
+    """
     with open(file_path, 'r') as f:
         data = json.load(f)
     return data['va_counts'], data['vb_counts'], data['ja_counts'], data['jb_counts']
 
 
 def process_data_with_k_fold(file_path, batch_size, k=5):
+    """
+    Process data using K-Fold cross-validation.
+    Args:
+        file_path (str): Path to the data file.
+        batch_size (int): Batch size for DataLoader.
+        k (int, optional): Number of folds for K-Fold cross-validation. Default is 5.
+    Returns:
+        list: List of tuples containing datasets and data loaders for each fold.
+    """
     pairs = Loader.read_data(file_path)
     va_counts, vb_counts, ja_counts, jb_counts = read_dictionaries_from_file('filtered_counters.json')
     vj_data = (va_counts, vb_counts, ja_counts, jb_counts)
@@ -65,7 +81,20 @@ def process_data_with_k_fold(file_path, batch_size, k=5):
 
 def train_models(vocab_size, hyperparameters, batch_size, acid_2_ix, train_data_loader,
                  len_one_hot, model_of, test_data_loader=None):
-
+    """
+    Train models with the given hyperparameters and data loaders.
+    Args:
+        vocab_size (int): Size of the vocabulary.
+        hyperparameters (tuple): Tuple containing hyperparameters for the models.
+        batch_size (int): Batch size for training.
+        acid_2_ix (dict): Dictionary mapping amino acids to indices.
+        train_data_loader (DataLoader): DataLoader for training data.
+        len_one_hot (int): Length of the one-hot encoded vectors.
+        model_of (str): Type of the model.
+        test_data_loader (DataLoader, optional): DataLoader for test data. Default is None.
+    Returns:
+        tuple: Trained model and encoders/decoders for alpha and beta chains.
+    """
     (embed_size, hidden_size, num_layers, latent_size, weight_decay_cl, weight_decay_encoder, dropout_prob, layer_norm,
      nhead, dim_feedforward) = hyperparameters
     # Initialize the models
@@ -83,13 +112,24 @@ def train_models(vocab_size, hyperparameters, batch_size, acid_2_ix, train_data_
     else:
         model = Models.FFNN(latent_size * 2 * 2 + len_one_hot + 1, dropout_prob, layer_norm).to(DEVICE)
 
-    Trainer.merge_train_model(model, "LSTM", (alpha_encoder, alpha_decoder),
-                              (beta_encoder, beta_decoder), train_data_loader, test_data_loader, DEVICE,
-                              base_folder, batch_size, acid_2_ix, weight_decay_encoder, weight_decay_cl)
+    Trainer.train_model(model, "LSTM", (alpha_encoder, alpha_decoder),
+                        (beta_encoder, beta_decoder), train_data_loader, test_data_loader, DEVICE,
+                        base_folder, batch_size, acid_2_ix, weight_decay_encoder, weight_decay_cl)
     return model, (alpha_encoder, alpha_decoder), (beta_encoder, beta_decoder)
 
 
 def evaluate_model(model, encoders, data_loader):
+    """
+    Evaluate the model on the given data loader.
+    Args:
+        model (nn.Module): The model to evaluate.
+        encoders (tuple): Tuple containing the alpha and beta encoders.
+        data_loader (DataLoader): DataLoader for the evaluation data.
+    Returns:
+        tuple: AUC score, all labels, all predicted probabilities, alpha sequences, beta sequences,
+               top positive alpha sequences, top positive beta sequences, bottom negative alpha sequences,
+               bottom negative beta sequences.
+    """
     (encoder_alpha, encoder_beta) = encoders
     correct = 0
     total = 0
@@ -110,14 +150,14 @@ def evaluate_model(model, encoders, data_loader):
 
             alpha = alpha.to(DEVICE)
             beta = beta.to(DEVICE)
+            # Encode alpha and beta sequences
             _, alpha_vector, _ = encoder_alpha(alpha)
             _, beta_vector, _ = encoder_beta(beta)
             if alpha_vector.shape[0] >= 2:
-                # If the tensor has at least two layers, return the second one with an added dimension
                 alpha_vector = alpha_vector[1].unsqueeze(0)
             if beta_vector.shape[0] >= 2:
-                # If the tensor has at least two layers, return the second one with an added dimension
                 beta_vector = beta_vector[1].unsqueeze(0)
+            # Concatenate inputs
             concatenated_a_b = torch.cat((alpha_vector, beta_vector), dim=2)
             if stage1 is not None and any(o is not None for o in stage1):
                 stage1 = stage1.to(DEVICE)
@@ -129,27 +169,28 @@ def evaluate_model(model, encoders, data_loader):
                 concatenated_inputs = torch.cat((concatenated_a_b, va_one_hot.unsqueeze(0),
                                                  vb_one_hot.unsqueeze(0), ja_one_hot.unsqueeze(0),
                                                  jb_one_hot.unsqueeze(0)), dim=2)
+            # Get model outputs and predictions
             outputs = model(concatenated_inputs)
             predicted_probabilities = torch.sigmoid(outputs)
             predicted = (predicted_probabilities >= 0.5).squeeze().int()
             add = (predicted == labels).sum().item()
             total += len(predicted)
             correct += add
+            # Convert labels and predictions to numpy arrays
             labels = labels.cpu().numpy() if labels.is_cuda else labels.numpy()
             if predicted_probabilities.is_cuda:
                 predicted_probabilities = predicted_probabilities.cpu().numpy()
             else:
-                predicted_probabilities.numpy()
+                predicted_probabilities = predicted_probabilities.numpy()
 
             # Append the true labels and predicted probabilities to the lists
             all_alpha.extend(alpha.cpu().numpy() if alpha.is_cuda else alpha.numpy())
             all_beta.extend(beta.cpu().numpy() if beta.is_cuda else beta.numpy())
             all_labels.extend(labels)
             all_predicted_probs.extend(predicted_probabilities.squeeze())
+    # Calculate AUC
     auc = roc_auc_score(all_labels, all_predicted_probs)
-    acc = correct / total
     print(f'AUC: {auc}')
-    print(f'Accuracy: {acc}')
 
     # Identify top positive and bottom negative cases
     positive_indices = [i for i, label in enumerate(all_labels) if label == 1]
@@ -173,6 +214,16 @@ def evaluate_model(model, encoders, data_loader):
 
 
 def plot_auc(all_labels, all_predicted_probs, all_labels2=None, all_predicted_probs2=None, ax=None, text=None):
+    """
+    Plot the ROC curve and compute the AUC score.
+    Args:
+        all_labels (list): True labels for the first dataset.
+        all_predicted_probs (list): Predicted probabilities for the first dataset.
+        all_labels2 (list, optional): True labels for the second dataset. Default is None.
+        all_predicted_probs2 (list, optional): Predicted probabilities for the second dataset. Default is None.
+        ax (matplotlib.axes.Axes, optional): Axes object to plot on. Default is None.
+        text (str, optional): Text to include in the saved plot filename. Default is None.
+    """
     # Compute ROC curve
     fpr, tpr, _ = roc_curve(all_labels, all_predicted_probs)
     auc = roc_auc_score(all_labels, all_predicted_probs)
@@ -215,6 +266,16 @@ def plot_auc(all_labels, all_predicted_probs, all_labels2=None, all_predicted_pr
 
 def plot_precision_recall(all_labels, all_predicted_probs, all_labels2=None, all_predicted_probs2=None, ax=None,
                           text=None):
+    """
+    Plot the Precision-Recall curve and compute the Average Precision (AP) score.
+    Args:
+        all_labels (list): True labels for the first dataset.
+        all_predicted_probs (list): Predicted probabilities for the first dataset.
+        all_labels2 (list, optional): True labels for the second dataset. Default is None.
+        all_predicted_probs2 (list, optional): Predicted probabilities for the second dataset. Default is None.
+        ax (matplotlib.axes.Axes, optional): Axes object to plot on. Default is None.
+        text (str, optional): Text to include in the saved plot filename. Default is None.
+    """
     # Compute Precision-Recall curve and Average Precision (AP) for the first dataset
     precision, recall, _ = precision_recall_curve(all_labels, all_predicted_probs)
     avg_precision = average_precision_score(all_labels, all_predicted_probs)
@@ -260,6 +321,15 @@ def plot_precision_recall(all_labels, all_predicted_probs, all_labels2=None, all
 
 
 def plot_combined(all_labels, all_predicted_probs, all_labels2=None, all_predicted_probs2=None, text=None):
+    """
+    Plot combined ROC and Precision-Recall curves.
+    Args:
+        all_labels (list): True labels for the first dataset.
+        all_predicted_probs (list): Predicted probabilities for the first dataset.
+        all_labels2 (list, optional): True labels for the second dataset. Default is None.
+        all_predicted_probs2 (list, optional): Predicted probabilities for the second dataset. Default is None.
+        text (str, optional): Text to include in the saved plot filename. Default is None.
+    """
     fig, axes = plt.subplots(1, 2, figsize=(20, 10))
 
     # Plot ROC curve on the first subplot
@@ -275,7 +345,14 @@ def plot_combined(all_labels, all_predicted_probs, all_labels2=None, all_predict
 
 
 def objective(trial, file_path):
-
+    """
+    Objective function for Optuna hyperparameter optimization.
+    Args:
+        trial (optuna.trial.Trial): A trial object for hyperparameter suggestions.
+        file_path (str): Path to the data file.
+    Returns:
+        float: Mean AUC score across K-folds.
+    """
     # Define the search space for hyperparameters
     hidden_size = trial.suggest_categorical('hidden_size', [256, 512, 1024])
     weight_decay_cl = trial.suggest_float('weight_decay_cl', 1e-5, 1e-1, log=True)
@@ -333,7 +410,13 @@ def objective(trial, file_path):
 
 
 def save_best_params(study, trial, file_path='best_hyperparameters_vdjdb.json'):
-    """Save the best hyperparameters to a file if the current trial's score is better."""
+    """
+    Save the best hyperparameters to a file if the current trial's score is better.
+    Args:
+        study (optuna.study.Study): The study object.
+        trial (optuna.trial.Trial): The trial object.
+        file_path (str, optional): Path to the file where best hyperparameters will be saved.
+    """
     current_best_value = study.best_value
     print("in_saving")
     try:
@@ -355,6 +438,12 @@ def save_best_params(study, trial, file_path='best_hyperparameters_vdjdb.json'):
 
 
 def run_optuna(input_file, hyperparameters_file_path):
+    """
+    Run Optuna hyperparameter optimization.
+    Args:
+        input_file (str): Path to the input data file.
+        hyperparameters_file_path (str): Path to the file where best hyperparameters will be saved.
+    """
     study = optuna.create_study(direction='maximize')
 
     def wrapped_objective(trial):
@@ -378,6 +467,18 @@ def run_optuna(input_file, hyperparameters_file_path):
 
 def save_20_to_file(ix_to_acid, all_alpha, all_beta, top_alpha_positives, top_beta_positives, bottom_alpha_negatives,
                     bottom_beta_negatives, text):
+    """
+    Save sequences to a file.
+    Args:
+        ix_to_acid (dict): Dictionary mapping indices to amino acids.
+        all_alpha (list): List of all alpha sequences.
+        all_beta (list): List of all beta sequences.
+        top_alpha_positives (list): List of top positive alpha sequences.
+        top_beta_positives (list): List of top positive beta sequences.
+        bottom_alpha_negatives (list): List of bottom negative alpha sequences.
+        bottom_beta_negatives (list): List of bottom negative beta sequences.
+        text (str): Text to include in the filename.
+    """
     top_alpha_positives_seq = arrays_to_sequences(top_alpha_positives, ix_to_acid)
     top_beta_positives_seq = arrays_to_sequences(top_beta_positives, ix_to_acid)
     bottom_alpha_negatives_seq = arrays_to_sequences(bottom_alpha_negatives, ix_to_acid)
@@ -397,6 +498,15 @@ def save_20_to_file(ix_to_acid, all_alpha, all_beta, top_alpha_positives, top_be
 
 
 def find_best_model(model_of, file_path, best_params_file):
+    """
+    Find the best model using the best hyperparameters.
+    Args:
+        model_of (str): Type of the model.
+        file_path (str): Path to the data file.
+        best_params_file (str): Path to the file containing the best hyperparameters.
+    Returns:
+        tuple: Best model, alpha encoder, beta encoder, and test data loader.
+    """
     # Load the best hyperparameters from the JSON file
     with open(best_params_file, 'r') as f:
         best_params = json.load(f)
@@ -482,6 +592,14 @@ def find_best_model(model_of, file_path, best_params_file):
 
 
 def arrays_to_sequences(arrays, ix_2_acid):
+    """
+    Convert arrays of indices to sequences of amino acids.
+    Args:
+        arrays (list): List of arrays containing indices.
+        ix_2_acid (dict): Dictionary mapping indices to amino acids.
+    Returns:
+        list: List of sequences.
+    """
     sequences = []
     for array in arrays:
         sequence = ''.join(
@@ -491,7 +609,17 @@ def arrays_to_sequences(arrays, ix_2_acid):
 
 
 def load_models(model_save_paths, len_one_hot, vocab_size, best_params_file, model_of):
-
+    """
+    Load the best models and their parameters.
+    Args:
+        model_save_paths (dict): Dictionary containing paths to the saved models.
+        len_one_hot (int): Length of the one-hot encoded vectors.
+        vocab_size (int): Size of the vocabulary.
+        best_params_file (str): Path to the file containing the best hyperparameters.
+        model_of (str): Type of the model.
+    Returns:
+        tuple: Loaded main model, alpha encoder, and beta encoder.
+    """
     # Load the best hyperparameters from the JSON file
     with open(best_params_file, 'r') as f:
         best_params = json.load(f)
@@ -530,13 +658,18 @@ def load_models(model_save_paths, len_one_hot, vocab_size, best_params_file, mod
 
 
 def load_data(file_path):
+    """
+    Load data and prepare the dataset and DataLoader.
+    Args:
+        file_path (str): Path to the data file.
+    Returns:
+        tuple: Full dataset, DataLoader, pairs, and length of one-hot encoded vectors.
+    """
     pairs = Loader.read_data(file_path)
     va_counts, vb_counts, ja_counts, jb_counts = read_dictionaries_from_file('filtered_counters.json')
     vj_data = (va_counts, vb_counts, ja_counts, jb_counts)
-    # Calculate the total length of all dictionaries combined
     len_one_hot = len(va_counts) + len(vb_counts) + len(ja_counts) + len(jb_counts)
     batch_size = 64
-    # return train_dataset, train_data_loader, train_data, test_dataset, test_data_loader, test_data, len_one_hot
     full_dataset = Loader.ChainClassificationDataset(pairs, vj_data)
     full_data_loader = DataLoader(full_dataset, batch_size=batch_size,
                                   shuffle=True, drop_last=True, collate_fn=Loader.collate_fn)
@@ -544,6 +677,15 @@ def load_data(file_path):
 
 
 def load_and_evaluate_model(file_path, param_file, model_of='vdjdb'):
+    """
+    Load and evaluate the model on the given dataset.
+    Args:
+        file_path (str): Path to the data file.
+        param_file (str): Path to the file containing the best hyperparameters.
+        model_of (str, optional): Type of the model. Default is 'vdjdb'.
+    Returns:
+        tuple: All labels and predicted probabilities for the test set.
+    """
     if model_of == "vdjdb":
         model_save_paths = {
             'model': "5fold_vdjdb/best_model.pth",
@@ -576,6 +718,15 @@ def load_and_evaluate_model(file_path, param_file, model_of='vdjdb'):
 
 
 def ireceptor_model_on_dataset(param_file, file_to_update, new_file_name):
+    """
+    Evaluate the iReceptor model on a new dataset and update the file with predictions.
+    Args:
+        param_file (str): Path to the file containing the best hyperparameters.
+        file_to_update (str): Path to the file to update with predictions.
+        new_file_name (str): Name of the new file to save the updated data.
+    Returns:
+        None
+    """
     va_counts, vb_counts, ja_counts, jb_counts = read_dictionaries_from_file('filtered_counters.json')
     vj_data = (va_counts, vb_counts, ja_counts, jb_counts)
     # Calculate the total length of all dictionaries combined
@@ -606,6 +757,13 @@ def ireceptor_model_on_dataset(param_file, file_to_update, new_file_name):
 
 
 def run_on_all_save_models(param_file, dataset_file, paths_for_best_models):
+    """
+    Train models on the entire dataset and save the best models.
+    Args:
+        param_file (str): Path to the file containing the best hyperparameters.
+        dataset_file (str): Path to the dataset file.
+        paths_for_best_models (dict): Dictionary containing paths to save the best models.
+    """
     # Load the best hyperparameters from the JSON file
     with open(param_file, 'r') as f:
         best_params = json.load(f)
@@ -668,11 +826,13 @@ def run_on_all_save_models(param_file, dataset_file, paths_for_best_models):
 
 
 def run_on_test_set():
+    """
+    Run the best models on the test set and plot the combined results.
+    """
     param_file_vdjdb = "best_hyperparameters_vdjdb.json"
     param_file_ireceptor = "best_hyperparameters_ireceptor.json"
     all_labels_test_vdjdb, all_predicted_probs_test_vdjdb = load_and_evaluate_model(
         'vdjdb_validation.csv', param_file_vdjdb, "vdjdb")
-    # # param_file = "best_hyperparameters_stage2.json"
     all_labels_test_irec, all_predicted_probs_test_irec = load_and_evaluate_model(
         'ireceptor_validation.csv', param_file_ireceptor, "ireceptor")
 
@@ -680,6 +840,14 @@ def run_on_test_set():
                   all_predicted_probs_test_vdjdb)
 
 def predict(input_pair, model_of="ireceptor"):
+    """
+    Predict the probability for a given input pair using the specified model.
+    Args:
+        input_pair (list): List containing the input pair data.
+        model_of (str, optional): Type of the model. Default is "ireceptor".
+    Returns:
+        Tensor: Predicted probability.
+    """
     if model_of == "vdjdb":
         model_save_paths = {'model': "models/model_vdjdb.pth", 'alpha_encoder': "models/alpha_encoder_vdjdb.pth",
                             'beta_encoder': "models/beta_encoder_vdjdb.pth"}
@@ -692,7 +860,7 @@ def predict(input_pair, model_of="ireceptor"):
     va_counts, vb_counts, ja_counts, jb_counts = read_dictionaries_from_file('filtered_counters.json')
     vj_data = (va_counts, vb_counts, ja_counts, jb_counts)
     len_one_hot = len(va_counts) + len(vb_counts) + len(ja_counts) + len(jb_counts)
-    # Load the best models
+    # Format the input pair
     va = v_j.v_j_format(input_pair[0][1], 1, "TRAV")
     vb = v_j.v_j_format(input_pair[1][1], 1, "TRBV")
     ja = v_j.v_j_format(input_pair[0][2], 1, "TRAJ")
@@ -702,9 +870,11 @@ def predict(input_pair, model_of="ireceptor"):
     else:
         input_pair_ordered = [(input_pair[0][0], input_pair[1][0]), (va, vb, ja, jb)]
     input_pair_ordered = [tuple(input_pair_ordered)]
+    # Create the dataset and DataLoader
     dataset = Loader.ChainClassificationDataset(input_pair_ordered, vj_data)
     loader = DataLoader(dataset, batch_size=1, collate_fn=Loader.collate_fn)
     vocab_size = len(dataset.vocab)
+    # Load the models
     model, alpha_encoder, beta_encoder = load_models(model_save_paths, len_one_hot, vocab_size, best_param, model_of)
     alpha_encoder.eval()
     beta_encoder.eval()
@@ -741,6 +911,16 @@ def predict(input_pair, model_of="ireceptor"):
 
 
 def validate_tr_prefix(value, prefix):
+    """
+    Validate that a value starts with a specific prefix.
+    Args:
+        value (str): The value to validate.
+        prefix (str): The required prefix.
+    Returns:
+        str: The validated value.
+    Raises:
+        argparse.ArgumentTypeError: If the value does not start with the prefix.
+    """
     if not value.startswith(prefix):
         raise argparse.ArgumentTypeError(f"{value} must start with {prefix}")
     return value
@@ -764,14 +944,19 @@ def parse_arguments():
 
 if __name__ == "__main__":
 
+    # Parse command-line arguments
     args = parse_arguments()
+    # Prepare the input pair from the parsed arguments
     input_pair = [[args.tcra, args.va, args.ja], [args.tcrb, args.vb, args.jb]]
+    # Determine the model type based on the data type
     if args.data_type == "All T cells":
         model_of = "ireceptor"
     else:
         model_of = "vdjdb"
+        # Predict the base output using the iReceptor model
         base_output = predict(input_pair, "ireceptor").item()
         input_pair.append(base_output)
+    # Predict the final output using the determined model
     output = predict(input_pair, model_of).item()
     print(f'The probability for given Alpha and Beta chains to pair is {output}.')
 

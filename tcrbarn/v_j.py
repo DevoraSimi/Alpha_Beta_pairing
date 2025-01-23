@@ -1,6 +1,15 @@
 
-
 def v_j_format(gene, levels, gene_name):
+    """
+    Format V and J gene names according to specific rules.
+    Args:
+        gene (str): The gene name to format.
+        levels (int): The number of levels to include in the formatted name.
+        gene_name (str): The base name of the gene (e.g., "TRBV", "TRBJ").
+    Returns:
+        str: The formatted gene name.
+    """
+    # Handle special cases where the gene is missing or invalid
     if gene in ["~", "nan", "", "NA"]:
         return "~"
 
@@ -24,7 +33,7 @@ def v_j_format(gene, levels, gene_name):
     gene = gene.split("/")[0]
     gene_list = gene.replace(" ", "").replace("*", "-").replace(":", "-").split("-")
 
-    #add zero to numbers with one digit
+    # add zero to numbers with one digit
     gene_value = gene_list[0].replace(gene_name, "")
     if len(gene_value) == 1:
         gene_value = "0" + gene_value
