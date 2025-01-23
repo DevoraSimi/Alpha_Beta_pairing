@@ -509,19 +509,21 @@ def load_models(model_save_paths, len_one_hot, vocab_size, best_params_file, mod
     else:
         main_model = Models.FFNN(latent_size * 2 * 2 + len_one_hot, dropout_prob, layer_norm).to(DEVICE)
 
-    main_model.load_state_dict(torch.load(model_save_paths['model']))
+    main_model.load_state_dict(torch.load(model_save_paths['model'], map_location=DEVICE, weights_only=False))
     main_model.eval()  # Set the model to evaluation mode
 
     # Load the alpha encoder
     alpha_encoder = Models.EncoderLstm(vocab_size, embed_size, hidden_size, latent_size, dropout_prob, layer_norm,
                                        num_layers).to(DEVICE)
-    alpha_encoder.load_state_dict(torch.load(model_save_paths['alpha_encoder']))
+    alpha_encoder.load_state_dict(torch.load(model_save_paths['alpha_encoder'], map_location=DEVICE,
+                                             weights_only=False))
     alpha_encoder.eval()
 
     # Load the beta encoder
     beta_encoder = Models.EncoderLstm(vocab_size, embed_size, hidden_size, latent_size, dropout_prob, layer_norm,
                                       num_layers).to(DEVICE)
-    beta_encoder.load_state_dict(torch.load(model_save_paths['beta_encoder']))
+    beta_encoder.load_state_dict(torch.load(model_save_paths['beta_encoder'], map_location=DEVICE,
+                                            weights_only=False))
     beta_encoder.eval()
 
     return main_model, alpha_encoder, beta_encoder
