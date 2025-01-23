@@ -43,6 +43,8 @@ class ChainClassificationDataset(Dataset):
             output = None
         elif len(self.data[ix]) == 4:
             chain_pair, vj, label, output = self.data[ix]
+            if label == -1:
+                label = None
             output = float(output)  # Ensure `output` is a float
         else:
             raise ValueError("Unexpected number of columns in dataset row.")
