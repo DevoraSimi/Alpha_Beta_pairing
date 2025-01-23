@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="img.png" alt="TCR-BARN Model" />
+      <img src="" alt="tcrbarn">
 </p>
 <p align="center">
     <a href="https://img.shields.io/badge/python-100%25-blue">
@@ -23,7 +23,8 @@ utilizing LSTM networks and one-hot encoding to capture sequence dependencies an
 - [Structure](#structure)
 
 ## Installation
-To install the required dependencies, run:
+1. Download the repository.
+2. Install the required dependencies, run:
 ```bash
 pip install -r requirements.txt
 ```
