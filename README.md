@@ -24,9 +24,14 @@ utilizing LSTM networks and one-hot encoding to capture sequence dependencies an
 
 ## Installation
 1. Download the repository.
-2. Install the required dependencies, run:
+
+2.  Install the required dependencies, run:
 ```bash
 pip install -r requirements.txt
+```
+3. Navigate to the directory:
+```bash
+cd tcrbarn
 ```
 
 ## Usage
