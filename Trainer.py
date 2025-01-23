@@ -3,12 +3,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import matplotlib.pyplot as plt
-import Predict
 
 
 def encoder_loss_function(acid2int, recon_x, x, mean, log_var):
     # Reconstruction loss
-    recon_loss_fn = nn.CrossEntropyLoss(ignore_index=acid2int[Predict.PAD_TOKEN])
+    recon_loss_fn = nn.CrossEntropyLoss(ignore_index=acid2int["<PAD>"])
     recon_loss = recon_loss_fn(recon_x, x)
     # KL divergence loss
     kl_loss = -0.5 * torch.sum(1 + log_var - mean.pow(2) - log_var.exp())
@@ -196,7 +195,7 @@ def merge_pass(sequence, encoder, decoder, DEVICE, batch_size, acid2int):
     _, encoder_mean, encoder_sigma = encoder(sequence)
     z = reparameterize(encoder_mean, encoder_sigma).to(DEVICE)
     # Decoder
-    decoder_input = torch.full((batch_size, 1), acid2int[Predict.SOS_TOKEN], dtype=torch.long).to(DEVICE)
+    decoder_input = torch.full((batch_size, 1), acid2int["<SOS>"], dtype=torch.long).to(DEVICE)
 
     recon_loss = 0
     kl_loss = 0

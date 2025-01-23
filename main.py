@@ -152,17 +152,19 @@ def evaluate_model(model, encoders, data_loader):
     print(f'Accuracy: {acc}')
 
     # Identify top positive and bottom negative cases
-    positive_probs = [prob for prob, label in zip(all_predicted_probs, all_labels) if label == 1]
-    negative_probs = [prob for prob, label in zip(all_predicted_probs, all_labels) if label == 0]
+    positive_indices = [i for i, label in enumerate(all_labels) if label == 1]
+    negative_indices = [i for i, label in enumerate(all_labels) if label == 0]
+    positive_probs = [all_predicted_probs[i] for i in positive_indices]
+    negative_probs = [all_predicted_probs[i] for i in negative_indices]
+    sorted_positive_indices = np.argsort(positive_probs)
+    sorted_negative_indices = np.argsort(negative_probs)
 
-    top_positive_indices = np.argsort(positive_probs)[-len(positive_probs) // 5:]
-    bottom_negative_indices = np.argsort(negative_probs)[:len(negative_probs) // 5]
+    top_positive_indices = [positive_indices[i] for i in sorted_positive_indices[-len(positive_probs) // 5:]]
+    bottom_negative_indices = [negative_indices[i] for i in sorted_negative_indices[:len(negative_probs) // 5]]
 
     # Gather the corresponding alpha and beta values based on sorted indices
     top_alpha_positives = [all_alpha[i] for i in top_positive_indices]
     top_beta_positives = [all_beta[i] for i in top_positive_indices]
-
-    # Gather the corresponding alpha and beta values based on sorted indices
     bottom_alpha_negatives = [all_alpha[i] for i in bottom_negative_indices]
     bottom_beta_negatives = [all_beta[i] for i in bottom_negative_indices]
 
@@ -769,14 +771,7 @@ if __name__ == "__main__":
         base_output = predict(input_pair, "ireceptor").item()
         input_pair.append(base_output)
     output = predict(input_pair, model_of).item()
-    if args.data_type == "All T cells":
-        print(f'The probability for given Alpha and Beta chains to pair is {output}.')
-        if output >= 0.938:
-            print("The prediction is in the top positive group")
-        elif output <= 0.001:
-            print("The prediction is in the bottom negative group")
-    else:
-        print(f'The probability for given Alpha and Beta chains to pair is {output}.')
+    print(f'The probability for given Alpha and Beta chains to pair is {output}.')
 
 
 
