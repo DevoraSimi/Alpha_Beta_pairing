@@ -1,9 +1,12 @@
-import main
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, roc_auc_score, precision_recall_curve, average_precision_score
 import pandas as pd
 import os
+import sys
+sys.path.append(os.path.abspath(".."))
+import main
 from matplotlib.font_manager import FontProperties
 
 font = FontProperties()
