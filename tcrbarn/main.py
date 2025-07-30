@@ -53,6 +53,18 @@ def process_data_with_k_fold(file_path, batch_size, k=5):
     vj_data = (va_counts, vb_counts, ja_counts, jb_counts)
     # Calculate the total length of all dictionaries combined
     len_one_hot = len(va_counts) + len(vb_counts) + len(ja_counts) + len(jb_counts)
+    if k == 1:
+        train_dataset = Loader.ChainClassificationDataset(pairs, vj_data)
+        train_data_loader = DataLoader(train_dataset, batch_size=batch_size,
+                                       shuffle=True, drop_last=True, collate_fn=Loader.collate_fn)
+
+        test_dataset = Loader.ChainClassificationDataset(pairs, vj_data)
+        test_data_loader = DataLoader(test_dataset, batch_size=batch_size,
+                                      shuffle=True, drop_last=True, collate_fn=Loader.collate_fn)
+
+        fold_data = [(train_dataset, train_data_loader, pairs,
+                      test_dataset, test_data_loader, pairs, len_one_hot)]
+        return fold_data
 
     # Initialize the KFold class
     kf = KFold(n_splits=k, shuffle=True)
