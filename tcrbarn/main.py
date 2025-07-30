@@ -869,8 +869,8 @@ def parse_arguments():
     parser.add_argument('--tcrb', type=str, required=True, help="Tcr beta sequence")
     parser.add_argument('--vb', type=lambda v: validate_tr_prefix(v, "TRBV"), required=True, help="V beta")
     parser.add_argument('--jb', type=lambda v: validate_tr_prefix(v, "TRBJ"), required=True, help="J beta")
-    parser.add_argument('--data_type', type=str, required=True, choices=['All T cells', 'pMHC'],
-                        help="All T cells or pMHC")
+    parser.add_argument('--data_type', type=str, choices=['All T cells', 'pMHC'],
+                        help="Optional: 'All T cells' or 'pMHC'")
 
     return parser.parse_args()
 
@@ -893,12 +893,10 @@ if __name__ == "__main__":
     # Prepare the input pair from the parsed arguments
     input_pair = [[args.tcra, args.va, args.ja], [args.tcrb, args.vb, args.jb]]
     # Determine the model type based on the data type
-    if args.data_type == "All T cells":
-        model_of = "All T cells"
+    if args.data_type:
+        output = predict(input_pair, args.data_type).item()
     else:
-        model_of = "pMHC"
-    # Predict the final output using the determined model
-    output = predict(input_pair, model_of).item()
+        output = predict(input_pair).item()
     print(f'The probability for given Alpha and Beta chains to pair is {output}.')
 
 

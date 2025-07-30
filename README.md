@@ -48,12 +48,12 @@ python main.py --tcra <TCR_alpha_sequence> --va <V_alpha_gene> --ja <J_alpha_gen
 - [tcrb]: TCR beta sequence (string)
 - [vb]: V beta gene (string, must start with "TRBV")
 - [jb]: J beta gene (string, must start with "TRBJ")
-- [data_type]: Type of data (string, choices: 'All T cells', 'pMHC-I')
+- [data_type]: Type of data (string, optional, choices: 'All T cells', 'pMHC')
 
 ## Examples
 To predict the binding probability for a given TCR alpha and beta sequence:
 ```
-python main.py --tcra="CAVRPQNYGQNFVF" --va="TRAV3" --ja="TRAJ26" --tcrb="CSVVVTLDEQFF" --vb="TRBV29-1" --jb="TRBJ2-1" --data_type="All T cells"
+python main.py --tcra="CAVRDGGFGNVLHC" --va="TRAV03" --ja="TRAJ35" --tcrb="CASSYDNGGNTGELFF" --vb="TRBV06" --jb="TRBJ02-2" --data_type="pMHC"
 ```
 
 ## Structure
@@ -61,19 +61,21 @@ python main.py --tcra="CAVRPQNYGQNFVF" --va="TRAV3" --ja="TRAJ26" --tcrb="CSVVVT
 ```
 You can find the scripts and models in:
 ├───tcrbarn
+│   ├───data
+│   │   └───All T cells, pMHC1, pMHC2 .csv
+│   │   └───process_data_new.py
 │   ├───models
-│   │   └───alpha_encoder_irec.pth
-│   │   └───alpha_encoder_vdjdb.pth
-│   │   └───beta_encoder_irec.pth
-│   │   └───beta_encoder_vdjdb.pth
-│   │   └───model_irec.pth
-│   │   └───model_vdjdb.pth
+│   │   └───folder for each mode
+│   │   │   └───best_alpha_encoder.pth
+│   │   │   └───best_beta_encoder.pth
+│   │   │   └───best_model.pth
+│   ├───plots
+│   │   └───.py files for plots
 │   └───Loader.py
 │   └───Models.py
 │   └───Trainer.py
-│   └───best_hyperparameters_ireceptor.json # For All T cells model.
-│   └───best_hyperparameters_vdjdb.json # For pMHC-I model.
 │   └───filtered_counters.json # For V J non rare genes.
+│   └───hyperparameters.json 
 │   └───main.py
 │   └───v_j.py
 
