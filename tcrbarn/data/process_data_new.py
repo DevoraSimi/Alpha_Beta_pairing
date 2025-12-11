@@ -137,6 +137,57 @@ def pu_negatives(input_file, output_file):
     result_df.to_csv(output_file, index=False)
 
 
+def pu_negatives_missing(input_file, output_file):
+    df = pd.read_csv(input_file)
+    # columns where NaN matters
+    missing_cols = ["va", "ja", "vb", "jb"]
+    # positive samples
+    df_true = df.assign(sign=1)
+    # ----------------------------------------------------------
+    # 1. Identify missing patterns per row
+    # ----------------------------------------------------------
+    df["missing_count"] = df[missing_cols].isna().sum(axis=1)
+    # Group 1: all missing (4 NaNs)
+    g_all_missing = df[df["missing_count"] == 4]
+    # Group 2: none missing (0 NaNs)
+    g_none_missing = df[df["missing_count"] == 0]
+    # Group 3: some missing (1–3 NaNs)
+    g_some_missing = df[df["missing_count"].between(1, 3)]
+    groups = {
+        "all_missing": g_all_missing,
+        "none_missing": g_none_missing,
+        "some_missing": g_some_missing,
+    }
+    # ----------------------------------------------------------
+    # 2. Shuffle to create negative samples per group
+    # ----------------------------------------------------------
+    negatives = []
+    for name, gdf in groups.items():
+        if len(gdf) == 0:
+            continue
+        # keep A and B columns
+        a_cols = gdf[['tcra', 'va', 'ja']].values
+        b_cols = gdf[['tcrb', 'vb', 'jb']].values
+        for _ in range(5):  # create 5 negative copies per group
+            idx_a = np.random.permutation(len(gdf))
+            idx_b = np.random.permutation(len(gdf))
+            shuf_a = a_cols[idx_a]
+            shuf_b = b_cols[idx_b]
+            shuf_df = pd.DataFrame(
+                np.hstack([shuf_a, shuf_b]),
+                columns=['tcra', 'va', 'ja', 'tcrb', 'vb', 'jb']
+            )
+            shuf_df["sign"] = 0
+            negatives.append(shuf_df)
+    # ----------------------------------------------------------
+    # 3. Combine positives + all group-negatives
+    # ----------------------------------------------------------
+    final_df = pd.concat([df_true] + negatives, ignore_index=True)
+    # final shuffle before saving
+    final_df = final_df.sample(frac=1).reset_index(drop=True)
+    final_df.to_csv(output_file, index=False)
+
+
 def filter_humans(input_file, output_file):
     # Load the CSV file
     df = pd.read_csv(input_file)
@@ -200,6 +251,7 @@ def positive_format_sapir_data(input_file, output_file, pep=False):
 
     # Reorder columns
     df_filtered = df_filtered[columns_in_order]
+    df_filtered = df_filtered[~df_filtered['tcra'].astype(str).str.contains(r'[#?]', na=False)]
     df_filtered.to_csv(output_file, index=False)
     # remove_duplicates(output_file, output_file)
     delete_rows_exceeding_threshold(output_file, output_file, "tcra")
@@ -258,6 +310,7 @@ def merge_donors():
 if __name__ == "__main__":
     positive_format_sapir_data("../all_data_280824.csv", "sapir_data_positives.csv")
     pu_negatives("sapir_data_positives.csv", "sapir_data_with_negatives.csv")
+    pu_negatives_missing("sapir_data_positives.csv", "sapir_data_with_negatives_vj_missing.csv")
     df = pd.read_csv("Minervina_june_positives.csv")
     all_stages("Minervina_june")
     merge_donors()

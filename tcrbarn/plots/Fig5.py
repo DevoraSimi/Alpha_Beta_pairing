@@ -45,6 +45,12 @@ def run_on_test_set(data_lists):
                 'alpha_encoder': "models/train_in_steps/best_alpha_encoder.pth",
                 'beta_encoder': "models/train_in_steps/best_beta_encoder.pth"
             }
+        elif mode == "vj":
+            save_paths = {
+                'model': "models/missing_vj/best_model.pth",
+                'alpha_encoder': "models/missing_vj/best_alpha_encoder.pth",
+                'beta_encoder': "models/missing_vj/best_beta_encoder.pth"
+            }
         else:
             save_paths = {
                 'model': "models/non-paired/best_model.pth",
@@ -52,7 +58,7 @@ def run_on_test_set(data_lists):
                 'beta_encoder': "models/non-paired/best_beta_encoder.pth"
             }
         labels, predicted_probs = main.load_and_evaluate_model(
-            dataset, param_file, save_paths)
+            dataset, param_file, "LSTM", "pMHC", save_paths)
         # mean_auc, std_auc = bootstrap_auc(labels_minervina_m_minervina_d, predicted_minervina_m_minervina_d)
         # mean_auc, std_auc = bootstrap_auc(labels_vdjdb_m_vdjdb_d, predicted_vdjdb_m_vdjdb_d)
         # mean_auc, std_auc = bootstrap_auc(labels_combined_m_combined_d, predicted_combined_m_combined_d)
@@ -62,20 +68,19 @@ def run_on_test_set(data_lists):
     return label_prob_pairs
 
 def results_on_all():
-    main.filter_test('data/pMHC1_with_negatives_train.csv', 'data/pMHC1_with_negatives_test.csv', 'data/pMHC1_with_negatives_test_filtered.csv')
-    d_pMHC1_m_pMHC1 = ('data/pMHC1_with_negatives_test_filtered.csv', 'pMHC1', "M pMHC1 - D pMHC1")
-    d_pMHC2_m_pMHC1 = ('data/pMHC2_with_negatives.csv', 'pMHC1', "M pMHC1 - D pMHC2")
-    d_all_tcells_m_pMHC1 = ('data/All T cells with_negatives.csv', 'pMHC1', None)
-    d_pMHC1_m_pMHC2 = ('data/pMHC1_with_negatives.csv', 'pMHC2', "M pMHC2 - D pMHC1")
-    d_pMHC2_m_pMHC2 = ('data/pMHC2_with_negatives_test.csv', 'pMHC2', "M pMHC2 - D pMHC2")
-    d_all_tcells_m_pMHC2 = ('data/All T cells with_negatives.csv', 'pMHC2', None)
-    d_pMHC1_m_combined = ('data/pMHC1_with_negatives_test_filtered.csv', 'pMHC', None)
-    d_pMHC2_m_combined = ('data/pMHC2_with_negatives_test.csv', 'pMHC', None)
-    d_all_tcells_m_combined = ('data/All T cells with_negatives.csv', 'pMHC', None)
-    d_all_tcells_m_all_tcells = ('data/All T cells with_negatives.csv', 'all_T_cells', None)
+    d_pMHC1_m_pMHC1 = ('data/pMHC1_with_negatives_ab_filtered_test.csv', 'pMHC1', "M pMHC1 - D pMHC1")
+    d_pMHC2_m_pMHC1 = ('data/pMHC2_with_negatives_filtered.csv', 'pMHC1', "M pMHC1 - D pMHC2")
+    d_all_tcells_m_pMHC1 = ('data/All T cells with_negatives_filter.csv', 'pMHC1', None)
+    d_pMHC1_m_pMHC2 = ('data/pMHC1_with_negatives_ab_filtered.csv', 'pMHC2', "M pMHC2 - D pMHC1")
+    d_pMHC2_m_pMHC2 = ('data/pMHC2_with_negatives_filtered_test.csv', 'pMHC2', "M pMHC2 - D pMHC2")
+    d_all_tcells_m_pMHC2 = ('data/All T cells with_negatives_filter.csv', 'pMHC2', None)
+    d_pMHC1_m_combined = ('data/pMHC1_with_negatives_ab_filtered_test.csv', 'pMHC', None)
+    d_pMHC2_m_combined = ('data/pMHC2_with_negatives_filtered_test.csv', 'pMHC', None)
+    d_all_tcells_m_combined = ('data/All T cells with_negatives_filter.csv', 'pMHC', None)
+    d_all_tcells_m_all_tcells = ('data/All T cells with_negatives_filter_test.csv', 'all_T_cells', None)
     read_merge_shuffle_save('data/pMHC2_with_negatives_test.csv', 'data/pMHC1_with_negatives_test_filtered.csv', 'data/merged_test.csv')
 
-    d_combined_m_combined = ('data/merged_test.csv', 'pMHC', "M combined - D combined")
+    d_combined_m_combined = ('data/new_combined_filtered_test.csv', 'pMHC', "M combined - D combined")
 
     data_lists = [
         d_pMHC1_m_pMHC1,
@@ -197,7 +202,7 @@ def pu_negatives(input_file, output_file):
     beta_columns = ['tcrb', 'vb', 'jb']
     df = df[alpha_columns + beta_columns]
     # Drop rows with "nan" in any of the selected columns
-    df = df.dropna()
+    #df = df.dropna()
     # Add sign column
     df_true = df.assign(sign=1)
     # Initialize a list to store the shuffled DataFrames
@@ -262,7 +267,7 @@ def auc_per_peptide(ax, full_data, test_set):
         pu_negatives(temp_file, temp_file)
         # Evaluate model
         labels, predicted = main.load_and_evaluate_model(
-            temp_file, param_file_ireceptor, "ireceptor", save_paths
+            temp_file, param_file_ireceptor, "LSTM", "ireceptor", save_paths
         )
 
         # Skip peptide if not enough class variation
@@ -290,7 +295,7 @@ def auc_per_peptide(ax, full_data, test_set):
     # plt.figure(figsize=(8, 5))
     bars = ax.barh(labels, values, color='skyblue')
     ax.set_xlabel("AUC", fontproperties=font, fontsize=font_size + 5)
-    ax.set_xlim(0.5, 1.0)
+    ax.set_xlim(0.4, 1.0)
 
     # Add AUC values on the bars
     for bar, auc in zip(bars, values):
@@ -319,11 +324,12 @@ def train_in_steps(train_file, json_param_file, output_file, step=5000, start=10
         subset.to_csv(temp_train_file, index=False)
 
         # Train model
-        main.find_best_model(temp_train_file, json_param_file)
+        main.find_best_model(temp_train_file, json_param_file, "LSTM")
 
         # Evaluate
-        labels, predicted_probes, _ = run_on_test_set(('data/merged_test.csv', "steps", "steps"))
-        auc = roc_auc_score(labels, predicted_probes)
+        probs_list = run_on_test_set([('data/new_combined_filtered_test.csv', "steps", "steps")])
+        (labels, predicted_probs, name) = probs_list[0]
+        auc = roc_auc_score(labels, predicted_probs)
 
         print(f"AUC with {size} samples: {auc:.4f}")
         results.append({'num_samples': size, 'auc': auc})
@@ -390,5 +396,5 @@ if __name__ == "__main__":
                    "train_in_steps/auc_steps.txt")
     run_on = results_on_all()
     label_probs = run_on_test_set(run_on)
-    plot_all_2x2(label_probs, 'data/pMHC1_with_pep_mhc.csv', 'data/pMHC1_with_negatives_test_filtered.csv',
+    plot_all_2x2(label_probs, 'data/pMHC1_with_pep_mhc.csv', 'data/pMHC1_with_negatives_ab_filtered_test.csv',
                  "train_in_steps/auc_steps.txt", output_file="all_auc_results")
